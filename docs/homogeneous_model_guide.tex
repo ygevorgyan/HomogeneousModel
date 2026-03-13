@@ -1,0 +1,550 @@
+\documentclass[11pt]{article}
+
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage[margin=1in]{geometry}
+\usepackage{longtable}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\lstset{
+  language=Mathematica,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\bfseries,
+  commentstyle=\itshape\color{gray},
+  breaklines=true,
+  frame=single,
+  columns=fullflexible,
+  morekeywords={Module,Table,Do,If,Which,SetPrecision,FindRoot,NSolve,
+    Association,OptionValue,Re,Im,Abs,Log,Exp,Sum,Product,Sort,
+    Ordering,Length,Total,Get,Print,
+    nLayerK2Num,nLayerDetNum,nLayerResidues,computePrefactor,
+    computeFconv,computeHomogeneous}
+}
+
+\lstdefinestyle{shell}{
+  language=bash,
+  basicstyle=\ttfamily\small,
+  frame=single,
+  columns=fullflexible
+}
+
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+
+\title{Constructing the Equivalent Homogeneous Rheology\\
+  from a Multilayer Viscoelastic Model}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+%======================================================================
+\section{Overview}
+\label{sec:overview}
+
+This folder contains the modular Wolfram Language pipeline for
+computing an equivalent homogeneous generalized Voigt rheology from an
+arbitrary $N$-layer viscoelastic body.  The model is configured
+entirely through \texttt{ModelInput.wl} and is not hardcoded to any
+particular body.
+
+The method follows Gevorgyan, Matsuyama \& Ragazzo (2023, MNRAS 523,
+1822; hereafter GMR\,2023), which shows that the tidal Love number
+$k_2(s)$ of any $N$-layer Maxwell body can be exactly reproduced by a
+single homogeneous body with a generalized Voigt rheology.  The
+layered-body formulation uses the propagator matrix notation of
+Sabadini, Vermeersen \& Cambiotti (2016, hereafter SVC\,2016).
+
+The pipeline proceeds in three stages:
+\begin{enumerate}
+  \item \textbf{Forward problem:} compute $k_2(s)$ as a rational
+    function of the Laplace variable $s$ using the propagator
+    $\mathbf{\Pi}_\ell$ (SVC\,2016, Eq.~2.9).
+  \item \textbf{Modal decomposition:} find the secular poles
+    $\{s_j\}$ and residues $\{r_j\}$ via grid search on the secular
+    determinant $D(s)$ (SVC\,2016, Eq.~1.199), Brent refinement, and
+    the limit formula.
+  \item \textbf{Rheological inversion:} map the poles and residues to
+    the generalized Voigt compliance $C(s) = P_2(s)/P_1(s)$
+    (GMR\,2023, Eq.~6) and extract parameters
+    $(\gamma, \alpha, \eta, \alpha_i, \eta_i)$,
+    then identify dominant modes for a reduced model.
+\end{enumerate}
+
+%======================================================================
+\section{File Inventory}
+\label{sec:files}
+
+\begin{longtable}{@{}lp{8.5cm}@{}}
+\toprule
+\textbf{File} & \textbf{Role} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{File} & \textbf{Role} \\
+\midrule
+\endhead
+\texttt{ModelInput.wl} &
+  User configuration: layer radii, densities, shear moduli,
+  viscosities, tidal frequency, and numerical settings.  Edit this
+  file to change the body model. \\[4pt]
+\texttt{LayeredBodyConstants.wl} &
+  Module~1: gravitational constant, gravity profile, Maxwell complex
+  modulus, moment of inertia, mapping prefactor $\Theta$, conversion
+  factor $F$, formatting. \\[4pt]
+\texttt{YMatrix.wl} &
+  Module~2: $6\times6$ fundamental matrix $\mathbf{Y}_\ell(r)$
+  and propagator $\mathbf{\Pi}_\ell(r,r')$ for degree
+  $\ell=2$ (SVC\,2016, Eq.~2.42).  Core--mantle boundary matrix
+  $\mathbf{I}_C$ (Eq.~2.6). \\[4pt]
+\texttt{NLayerJacobian.wl} &
+  Module~5: $N$-layer propagator using the unified $6\times6$
+  $\mathbf{\Pi}_\ell$ propagation through all layers (solid and
+  liquid).  Liquid layers are handled via $\hat\mu \approx 10^{-20}$
+  regularization.  The secular determinant $D(s)$
+  (SVC\,2016, Eq.~1.199) is computed from the $3\times3$ projected
+  matrix.  Provides \texttt{nLayerK2Num} (numerical $k_2(s)$),
+  \texttt{nLayerDetNum} ($D(s)$), \texttt{nLayerResidues}
+  (residues via limit formula), and perturbation utilities. \\[4pt]
+\texttt{HomogeneousRheology.wl} &
+  Module~6: \texttt{computeHomogeneous} --- the main function.  Calls
+  the $N$-layer modules to find poles, compute residues, and extract
+  all Voigt parameters.  Returns an \texttt{Association} with 16
+  keys. \\[4pt]
+\texttt{RunHomogeneous.wl} &
+  Driver script.  Loads all modules and \texttt{ModelInput.wl},
+  calls \texttt{computeHomogeneous}, identifies dominant modes, prints
+  tables, and generates comparison plots. \\[4pt]
+\texttt{VisualizeLayers.wl} &
+  Standalone script that reads \texttt{ModelInput.wl} and draws a
+  sector cross-section with numbered layers and a text listing of
+  radii and thicknesses.  Uses layer names from
+  \texttt{"layerNames"} if provided, otherwise labels generically.
+  Exports \texttt{output/layer\_cross\_section.pdf}.  No pipeline
+  modules required. \\
+\bottomrule
+\caption{Files in this folder.}
+\label{tab:files}
+\end{longtable}
+
+\subsection{Module dependency graph}
+
+\begin{verbatim}
+RunHomogeneous.wl
+  |-- ModelInput.wl
+  |-- HomogeneousRheology`
+  |     |-- LayeredBodyConstants`
+  |     +-- NLayerJacobian`
+  |           |-- LayeredBodyConstants`
+  |           +-- YMatrix`
+
+VisualizeLayers.wl
+  +-- ModelInput.wl       (standalone, no modules)
+\end{verbatim}
+
+\subsection{Required load order}
+
+\begin{lstlisting}
+Get["LayeredBodyConstants.wl"];
+Get["YMatrix.wl"];
+Get["NLayerJacobian.wl"];
+Get["HomogeneousRheology.wl"];
+\end{lstlisting}
+
+%======================================================================
+\section{Quick Start}
+\label{sec:quickstart}
+
+\subsection{Prerequisites}
+
+\begin{itemize}
+  \item \textbf{Wolfram Engine} (free) or \textbf{Mathematica}
+    (licensed), version 12.0 or later.
+  \item \texttt{wolframscript} on your \texttt{PATH}.
+\end{itemize}
+
+\subsection{Running}
+
+From the \texttt{homogeneous\_model/} directory:
+
+\begin{lstlisting}[style=shell]
+wolframscript -file RunHomogeneous.wl
+\end{lstlisting}
+
+This loads the model from \texttt{ModelInput.wl}, computes the
+equivalent homogeneous Voigt body, identifies dominant relaxation
+modes, prints all results, and generates four Love number comparison
+plots.
+
+\subsection{Changing the body model}
+
+Edit \texttt{ModelInput.wl}.  All arrays must have the same length.
+Set $\mu < 1$\,Pa for liquid layers.  Use exact rationals for maximum
+precision.
+
+%======================================================================
+\section{Configuration: \texttt{ModelInput.wl}}
+\label{sec:config}
+
+\subsection{\texttt{\$ModelConfig} --- Physical model}
+
+\begin{lstlisting}
+$ModelConfig = <|
+  "rk"   -> {r1, r2, ..., rN},   (* outer radii, m *)
+  "rhok" -> {rho1, ..., rhoN},   (* densities, kg/m^3 *)
+  "muk"  -> {mu1, ..., muN},     (* shear moduli, Pa *)
+  "etak" -> {eta1, ..., etaN},   (* viscosities, Pa s *)
+  "omega" -> 2 Pi / (T * 86400), (* tidal frequency, rad/s *)
+  "layerNames" -> {"Layer 1", ..., "Layer N"}  (* optional *)
+|>;
+\end{lstlisting}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}llp{7cm}@{}}
+\toprule
+\textbf{Key} & \textbf{Units} & \textbf{Description} \\
+\midrule
+\texttt{"rk"}    & m      & Outer radius of each layer, center to
+  surface. \\
+\texttt{"rhok"}  & kg/m$^3$ & Density of each layer. \\
+\texttt{"muk"}   & Pa     & Shear modulus.  Set $\mu < 1$\,Pa for
+  liquid layers. \\
+\texttt{"etak"}  & Pa\,s  & Viscosity (any small value for liquid). \\
+\texttt{"omega"} & rad/s  & Tidal forcing frequency. \\
+\texttt{"layerNames"} & ---  & Optional list of $N$ strings for
+  layer labels in \texttt{VisualizeLayers.wl}.  If omitted, layers are
+  labelled generically as ``Layer~$i$ (solid/liquid)''. \\
+\bottomrule
+\end{tabular}
+\caption{\texttt{\$ModelConfig} keys.}
+\end{table}
+
+\subsection{\texttt{\$AnalysisConfig} --- Numerical settings}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}llp{6.5cm}@{}}
+\toprule
+\textbf{Key} & \textbf{Default} & \textbf{Description} \\
+\midrule
+\texttt{"workingPrecision"} & 50 & Digits of precision. \\
+\texttt{"gridLogMin"} & $-20$ & $\log_{10}|s|$ lower bound for
+  pole search. \\
+\texttt{"gridLogMax"} & $-3$ & $\log_{10}|s|$ upper bound. \\
+\texttt{"gridPoints"} & 2000 & Grid points for sign-change
+  search. \\
+\texttt{"omegaInterestMin"} & $10^{-10}$ & Lower bound of frequency
+  interest range (rad/s). \\
+\texttt{"omegaInterestMax"} & $10^{-5}$ & Upper bound (rad/s). \\
+\texttt{"dominantThreshold"} & $1/50$ & Fractional threshold for
+  dominant-mode selection (2\%). \\
+\bottomrule
+\end{tabular}
+\caption{\texttt{\$AnalysisConfig} keys.}
+\end{table}
+
+%======================================================================
+\section{Main Function: \texttt{computeHomogeneous}}
+\label{sec:api}
+
+\begin{lstlisting}
+computeHomogeneous[rk, rhok, muk, etak, omega, opts]
+\end{lstlisting}
+
+\subsection{Algorithm}
+
+\begin{enumerate}
+  \item \textbf{Elastic Love number.} Evaluate $k_E =
+    \operatorname{Re}[k_2(10^{10})]$.
+  \item \textbf{Tidal $k_2$.} Evaluate $k_2(i\omega)$.
+  \item \textbf{Pole-finding.} Grid search for zeros of $D(s)$
+    (SVC\,2016, Eq.~1.199) on the negative real $s$-axis via
+    \texttt{nLayerDetNum}, detect sign changes, refine with Brent.
+  \item \textbf{Residues.} Limit formula
+    $r_j = \delta\cdot k_2(s_j + \delta)$ with
+    $\delta = 10^{-6}|s_j|$.
+  \item \textbf{Fluid Love number.}
+    $k_f = k_E + \sum(-r_j/s_j)$
+    (GMR\,2023, Eq.~26).
+  \item \textbf{Mapping constants.} $\Theta = 3\mathrm{I}_\circ G/R^5$
+    (GMR\,2023, Eq.~2),
+    $\gamma = \Theta/k_f$ (Eq.~4),
+    $\alpha = \Theta/k_E - \gamma$,
+    $F = 5\bar\rho R^2/38$.
+  \item \textbf{Voigt inversion.} Build compliance
+    $C(s) = P_2(s)/P_1(s)$ (Eq.~6), factor $s=0$ root from $P_1$
+    for $\eta$, solve $P_2(s) = 0$ for Voigt poles $\{q_i\}$
+    (Eq.~20), extract $(\alpha_i, \eta_i)$ from partial fractions
+    of $C_v(s)$ (Eq.~23).
+\end{enumerate}
+
+\subsection{Return value}
+
+Returns a Wolfram \texttt{Association} with 16 keys:
+
+\begin{longtable}{@{}llp{6.5cm}@{}}
+\toprule
+\textbf{Key} & \textbf{Units} & \textbf{Description} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Key} & \textbf{Units} & \textbf{Description} \\
+\midrule
+\endhead
+\texttt{"kE"}        & dimless & Elastic Love number $k_E$. \\
+\texttt{"kf"}        & dimless & Fluid Love number $k_f$. \\
+\texttt{"k2Re"}      & dimless & $\operatorname{Re}[k_2(i\omega)]$. \\
+\texttt{"k2Im"}      & dimless & $\operatorname{Im}[k_2(i\omega)]$. \\
+\texttt{"gamma"}     & Pa & Gravitational rigidity $\gamma$
+  (GMR\,2023, Eq.~4). \\
+\texttt{"alpha"}     & Pa & Elastic rigidity $\alpha$. \\
+\texttt{"eta"}       & Pa\,s & Isolated dashpot $\eta$. \\
+\texttt{"prefactor"} & s$^{-2}$ & $\Theta = 3\mathrm{I}_\circ G/R^5$
+  (GMR\,2023, Eq.~2). \\
+\texttt{"Fconv"}     & Pa\,s$^2$ & Conversion factor $F$. \\
+\texttt{"nPoles"}    & int & Number of secular poles $M$. \\
+\texttt{"poles"}     & 1/s & Pole locations $\{s_j\}$. \\
+\texttt{"residues"}  & dimless & Residues $\{r_j\}$. \\
+\texttt{"nVoigt"}    & int & Number of Voigt elements $N_V$. \\
+\texttt{"tauV"}      & s & Relaxation times $\tau_i = -1/p_i$. \\
+\texttt{"alphaV"}    & Pa & Voigt spring constants $\alpha_i$. \\
+\texttt{"etaV"}      & Pa\,s & Voigt dashpot viscosities $\eta_i$. \\
+\bottomrule
+\caption{Return value keys of \texttt{computeHomogeneous}.}
+\end{longtable}
+
+%======================================================================
+\section{Driver Output: \texttt{RunHomogeneous.wl}}
+\label{sec:output}
+
+The driver prints seven output sections:
+
+\begin{enumerate}
+  \item \textbf{Love numbers:} $k_E$, $k_f$,
+    $\operatorname{Re}[k_2]$, $\operatorname{Im}[k_2]$.
+  \item \textbf{Rheological parameters:} $\gamma$, $\alpha$,
+    $\eta$, pole/element counts.
+  \item \textbf{Secular relaxation modes table:} all $M$ poles with
+    $\tau_j$, residues, sorted by decreasing $|s_j|$.
+  \item \textbf{Voigt elements table:} all $N_V$ elements with
+    $\tau_i$, $\alpha_i$, $\eta_i$, sorted by decreasing $\tau$.
+  \item \textbf{Dominant mode analysis:} fractional contribution of
+    each element to $-\operatorname{Im}[J]$ over the interest range.
+  \item \textbf{Reduced model summary:} $k_2$ from dominant-only
+    model with relative errors.
+  \item \textbf{Comparison plots:}
+    $-\operatorname{Im}[k_2]$ and $\operatorname{Re}[k_2]$ vs
+    $\omega$: $N$-layer vs full Voigt, $N$-layer vs reduced Voigt.
+\end{enumerate}
+
+%======================================================================
+\section{Mathematical Pipeline}
+\label{sec:math}
+
+\subsection{From multilayer to $k_2(s)$}
+
+Each solid layer has Maxwell rheology with complex shear modulus
+(SVC\,2016, Correspondence Principle):
+\begin{equation}
+  \hat\mu_k(s) = \frac{\mu_k\,\nu_k\,s}{\mu_k + \nu_k\,s}\,,
+\end{equation}
+where $\mu_k$ is the shear modulus and $\nu_k$ the viscosity
+(\texttt{"etak"} in the code).
+Liquid layers use the regularization $\hat\mu \approx 10^{-20}$\,Pa,
+which makes the $6\times6$ fundamental matrix $\mathbf{Y}_\ell(r)$
+(SVC\,2016, Eq.~2.42) nearly rank-5 (the $S$ row vanishes).  All
+layers are propagated through the full $6\times6$ propagator
+$\mathbf{\Pi}_\ell(r, r') = \mathbf{Y}_\ell(r)\,
+\mathbf{Y}_\ell^{-1}(r')$ (Eq.~2.9) chain from the core--mantle
+boundary matrix $\mathbf{I}_C$ (Eq.~2.6); no special Clairaut
+propagator is needed.  This yields $k_2(s)$ as a rational function
+of $s$ for arbitrary layer configurations (any combination of solid
+and liquid layers).
+
+\subsection{Partial fraction decomposition}
+
+The poles $s_j < 0$ of $k_2(s)$ are the secular relaxation modes, i.e.\
+the roots of the secular determinant $D(s) = 0$ (SVC\,2016,
+Eq.~1.200).  The partial-fraction form is (GMR\,2023, Eq.~26):
+\begin{equation}
+  k_2(s) = k_E + \sum_{j=1}^{M} \frac{r_j}{s - s_j}\,,
+\end{equation}
+where $r_j$ are the residues and $\tau_j = -1/s_j$ the relaxation
+times of the normal modes.
+
+\subsection{Compliance inversion}
+
+The compliance is written as a ratio of two polynomials
+(GMR\,2023, Eq.~6):
+\begin{equation}
+  C(s) = \frac{P_2(s)}{P_1(s)}
+    = \frac{k_2(s)}{\Theta - \gamma\,k_2(s)}\,,
+\end{equation}
+where $\Theta = 3\mathrm{I}_\circ G/R^5$ (Eq.~2) and
+$\gamma = \Theta/k_f$ is the gravitational rigidity (Eq.~4).
+The viscous part of the compliance decomposes into partial fractions
+as the generalized Voigt form (Eq.~23):
+\begin{equation}
+  C_v(s) = \frac{\alpha^2}{(\gamma+\alpha)^2}
+    \biggl(\frac{1}{\eta} + \sum_{i=1}^{n}\frac{1}{\eta_i}\biggr)
+    \biggl(\frac{A_1}{s - s_1} + \cdots
+    + \frac{A_{n+1}}{s - s_{n+1}}\biggr),
+\end{equation}
+from which the full compliance is (Eq.~14):
+\begin{equation}
+  C(s) = \frac{1}{\alpha + \gamma} + C_v(s)\,.
+\end{equation}
+The isolated dashpot $\eta$ and the Kelvin--Voigt element parameters
+$\alpha_i$, $\eta_i$ (with characteristic times
+$\omega_i^{-1} = \eta_i/\alpha_i$, Eq.~18)
+are extracted from the partial-fraction coefficients.
+Physical (Pa) values: multiply by $F = 5\bar\rho R^2/38$.
+
+\subsection{Dominant mode selection}
+
+Each Voigt element's maximum fractional contribution to
+$-\operatorname{Im}[C(i\omega)]$ is computed over
+$[\omega_{\min}, \omega_{\max}]$.  Elements exceeding the threshold
+are retained in the reduced model.
+
+%======================================================================
+\section{Customising for a Different Body}
+\label{sec:custom}
+
+\begin{enumerate}
+  \item Edit \texttt{ModelInput.wl}: set \texttt{"rk"},
+    \texttt{"rhok"}, \texttt{"muk"}, \texttt{"etak"} for your body.
+    All arrays must have the same length $N$.
+  \item Set \texttt{"omega"} to the body's tidal forcing frequency.
+  \item Adjust \texttt{"gridLogMin"}/\texttt{"gridLogMax"} if
+    relaxation times span a different range than the default.
+  \item Adjust \texttt{"omegaInterestMin"}/\texttt{"omegaInterestMax"}
+    to the frequency range relevant for your problem.
+  \item Run: \texttt{wolframscript -file RunHomogeneous.wl}.
+\end{enumerate}
+
+The pipeline auto-detects the number of layers, identifies liquid
+layers ($\mu < 1$\,Pa), and adjusts the propagator chain accordingly.
+No code changes are needed.
+
+%======================================================================
+\section{Test Cases}
+\label{sec:testcases}
+
+The \texttt{test\_cases/} folder contains input files for three
+tidally-heated bodies beyond the default 5-layer Moon model.  These
+validate the pipeline for different layer counts and liquid-layer
+patterns.
+
+\begin{description}
+  \item[\texttt{ModelInputEuropa.wl}] --- 4~layers (liquid iron core,
+    silicate mantle, subsurface ocean, ice shell).  Two liquid layers.
+    Tidal period 3.5512\,days.  Based on Wahr et al.\ (2006),
+    Hussmann \& Spohn (2004).
+  \item[\texttt{ModelInputEnceladus.wl}] --- 3~layers (silicate core,
+    subsurface ocean, ice shell).  One liquid layer.  Tidal period
+    1.3702\,days.  Based on Cadek et al.\ (2016), Thomas et al.\
+    (2016).
+  \item[\texttt{ModelInputIo.wl}] --- 4~layers (liquid Fe-FeS core,
+    mantle, asthenosphere, lithosphere).  One liquid layer, contrasting
+    solid viscosities.  Tidal period 1.7691\,days.  Based on Segatz
+    et al.\ (1988), Bierson \& Nimmo (2016).
+\end{description}
+
+\subsection{Running a test case}
+
+Copy the desired input file over \texttt{ModelInput.wl} and run the
+pipeline:
+
+\begin{lstlisting}[style=shell]
+cd homogeneous_model/
+cp test_cases/ModelInputEuropa.wl ModelInput.wl
+wolframscript -file RunHomogeneous.wl
+wolframscript -file VisualizeLayers.wl
+\end{lstlisting}
+
+Repeat for Enceladus or Io by substituting the file name.  Remember to
+restore the original \texttt{ModelInput.wl} afterwards if needed.
+
+%======================================================================
+\section{Layer Visualization: \texttt{VisualizeLayers.wl}}
+\label{sec:vis}
+
+Standalone script that generates a sector cross-section of the layered
+body.  Works for any number of layers.
+
+\begin{lstlisting}[style=shell]
+wolframscript -file VisualizeLayers.wl
+\end{lstlisting}
+
+\paragraph{Input.}
+Reads \texttt{ModelInput.wl} (\texttt{"rk"}, \texttt{"muk"}, and
+optionally \texttt{"layerNames"}).
+
+\paragraph{Liquid detection.}
+$\mu < 1$\,Pa $\Rightarrow$ liquid.
+
+\paragraph{Colours.}
+Layers are coloured with the \texttt{LightTemperatureMap} palette: warm
+(orange) at the center, cool (blue) at the surface.  The range is
+compressed to $[0.2, 0.8]$ to avoid extreme saturation.
+
+\paragraph{Layer names.}
+If \texttt{"layerNames"} is provided in \texttt{\$ModelConfig}, those
+names are used directly.  Otherwise, layers are labelled generically as
+``Layer~$i$ (solid)'' or ``Layer~$i$ (liquid)'' based on the liquid
+detection.  The pre-configured test cases include descriptive names
+(e.g.\ ``Inner core'', ``Silicate mantle'', ``Ice shell'').
+
+\paragraph{Thin-layer exaggeration.}
+If any layer occupies less than 3\% of the surface radius, its visual
+thickness is boosted to the minimum and the deficit is redistributed
+proportionally from thicker layers.  The title is updated to note
+``(visual thickness exaggerated)'' when this occurs; otherwise it reads
+``(to scale)''.
+
+\paragraph{Layout.}
+The cross-section sector is on the left with layer numbers placed along
+the left radial edge at each layer's midpoint, and ``0'' at the body
+centre.  On the right, a text listing shows each layer as:
+\texttt{i --- Name~~thickness~km (radius~km)}.
+
+\paragraph{Output.}
+\texttt{output/layer\_cross\_section.pdf} --- sector cross-section with
+numbered layers on the left, text listing of names, thicknesses, and
+outer radii on the right.
+
+%======================================================================
+\section{Troubleshooting}
+\label{sec:trouble}
+
+\begin{description}
+  \item[Missing poles:] Widen \texttt{"gridLogMin"}/\texttt{"gridLogMax"}
+    or increase \texttt{"gridPoints"}.
+  \item[Curves don't overlap in full Voigt plot:] Increase
+    \texttt{"workingPrecision"} (try 80 or 100).
+  \item[\texttt{FindRoot} warnings:] Usually harmless.  If poles look
+    wrong, increase grid density.
+  \item[\texttt{NSolve::precw}:] The Voigt pole solver needed extra
+    precision; handled automatically at doubled precision.
+\end{description}
+
+\bigskip
+\noindent\textbf{References.}
+
+\medskip
+\noindent
+\textit{Gevorgyan, Matsuyama \& Ragazzo (2023), MNRAS 523, 1822.}
+
+\medskip
+\noindent
+\textit{Sabadini, Vermeersen \& Cambiotti (2016), Global Dynamics of
+the Earth: Applications of Viscoelastic Relaxation Theory to
+Solid-Earth and Planetary Geophysics, 2nd ed., Springer.}
+
+\end{document}
