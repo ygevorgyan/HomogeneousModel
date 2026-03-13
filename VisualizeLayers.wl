@@ -127,13 +127,9 @@ layerNumberLabels = Table[
   {i, 1, nLayers}
 ];
 
-(* "0" label at body center *)
-centerLabel = Text[Style["0", lblSize - 4, GrayLevel[0.3], lblFont],
-  {0.03, -0.03}, {-1, 1}];
-
 (* Build the cross-section graphic *)
 sectorGraphic = Graphics[
-  {sectorLayers, boundaryArcs, edgeLines, layerNumberLabels, centerLabel},
+  {sectorLayers, boundaryArcs, edgeLines, layerNumberLabels},
   PlotRange -> All,
   PlotRangePadding -> {{Scaled[0.08], Scaled[0.02]}, {Scaled[0.05], Scaled[0.02]}},
   AspectRatio -> Automatic,
@@ -141,7 +137,7 @@ sectorGraphic = Graphics[
 ];
 
 (* Build the layer info listing: "i --- Name  thickness km (radius km)" *)
-tblSize = lblSize - 6;
+tblSize = lblSize - 5;
 layerListing = Column[
   Table[
     Style[
