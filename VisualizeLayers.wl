@@ -121,7 +121,7 @@ layerNumberLabels = Table[
     (* Midpoint on the left radial edge at this radius *)
     xMid = rMid * Cos[thetaMax];
     yMid = rMid * Sin[thetaMax];
-    Text[Style[ToString[i], lblSize - 2, GrayLevel[0.15], Bold, lblFont],
+    Text[Style[ToString[i], lblSize - 2, GrayLevel[0.15], lblFont],
       {xMid - 0.06, yMid}, {1, 0}]   (* offset left so it sits outside the edge *)
   ],
   {i, 1, nLayers}
