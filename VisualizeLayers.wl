@@ -137,7 +137,7 @@ sectorGraphic = Graphics[
 ];
 
 (* Build the layer info listing: "i --- Name  thickness km (radius km)" *)
-tblSize = lblSize - 5;
+tblSize = lblSize - 4;
 layerListing = Column[
   Table[
     Style[
