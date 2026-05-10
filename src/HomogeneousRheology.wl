@@ -32,12 +32,15 @@ Options[computeHomogeneous] = {
   "WorkingPrecision" -> 50,
   "GridLogMin" -> -17,
   "GridLogMax" -> -5,
-  "GridPoints" -> 500
+  "GridPoints" -> 500,
+  "MergeAdjacentLiquids" -> True
 };
 
-computeHomogeneous[rk_, rhok_, muk_, etak_, omega_, opts:OptionsPattern[]] :=
+computeHomogeneous[rk0_, rhok0_, muk0_, etak0_, omega_,
+    opts:OptionsPattern[]] :=
   Module[
-  {wp, gridLogMin, gridLogMax, gridN,
+  {wp, gridLogMin, gridLogMax, gridN, mergeLiquids,
+   rk, rhok, muk, etak, mergedTuple,
    kEval, kfval, k2val, k2Re, k2Im, Aj,
    prefactor, Fconv,
    gammac, alphac, gammaPa, alphaPa, eta0c, eta0Pa,
@@ -51,6 +54,14 @@ computeHomogeneous[rk_, rhok_, muk_, etak_, omega_, opts:OptionsPattern[]] :=
   gridLogMin = OptionValue["GridLogMin"];
   gridLogMax = OptionValue["GridLogMax"];
   gridN = OptionValue["GridPoints"];
+  mergeLiquids = OptionValue["MergeAdjacentLiquids"];
+
+  (* 0. Collapse adjacent liquid layers, if any. The merged layout
+        preserves total mass via a volume-weighted mean density. *)
+  If[mergeLiquids,
+    mergedTuple = mergeAdjacentLiquidLayers[rk0, rhok0, muk0, etak0];
+    {rk, rhok, muk, etak} = mergedTuple,
+    rk = rk0; rhok = rhok0; muk = muk0; etak = etak0];
 
   (* 1. kE: elastic Love number at large s *)
   kEval = Re[nLayerK2Num[SetPrecision[10^10, wp], rk, rhok, muk, etak]];

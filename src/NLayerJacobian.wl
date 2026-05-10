@@ -54,9 +54,68 @@ nLayerResidues::usage =
 residues of k2(s) at the given poles via the limit formula \
 r_j = delta * k2(s_j + delta).";
 
+mergeAdjacentLiquidLayers::usage =
+  "mergeAdjacentLiquidLayers[rk, rhok, muk, etak] collapses any run of \
+consecutive liquid layers (muk[[j]] < 1 Pa) into a single equivalent \
+liquid layer with the outer radius of the outermost member of the run, \
+the inner radius of the layer just below the run (or 0 if the run \
+starts at the centre), and the volume-weighted mean density of the \
+merged region. Returns {rk, rhok, muk, etak} with adjacent liquid \
+layers merged. Preserves total mass exactly.";
+
 Begin["`Private`"];
 
 $NLwp = 50;
+
+(* ---- Merge adjacent liquid layers ----------------------------------- *)
+
+(* Volume-weighted mean density preserves the total mass of the merged
+   region exactly. The merged layer's outer radius is the outermost
+   member's r_k, its inner radius is the underlying solid's r_{k-1}
+   (or 0 if the run starts at the centre).
+
+   This step is a no-op for any input that already has at most one
+   liquid run. It is intended for the case in which the user supplies
+   a stratified liquid core or mantle as several sub-layers. *)
+
+mergeAdjacentLiquidLayers[rk_, rhok_, muk_, etak_] :=
+  Module[{nLay, isLiquid, j, jEnd, rOuter, rInner, meanRho,
+    rOut, rhoOut, muOut, etaOut},
+    nLay = Length[rk];
+    isLiquid = Table[muk[[j]] < 1, {j, nLay}];
+
+    rOut = {}; rhoOut = {}; muOut = {}; etaOut = {};
+
+    j = 1;
+    While[j <= nLay,
+      If[isLiquid[[j]],
+        jEnd = j;
+        While[jEnd < nLay && isLiquid[[jEnd + 1]], jEnd++];
+        rOuter = rk[[jEnd]];
+        rInner = If[j == 1, 0, rk[[j - 1]]];
+        meanRho = Total[Table[
+          rhok[[k]] (rk[[k]]^3 -
+            If[k == 1, 0, rk[[k - 1]]]^3),
+          {k, j, jEnd}]] / (rOuter^3 - rInner^3);
+        If[jEnd > j,
+          Print["  [mergeAdjacentLiquidLayers] merged layers ",
+            j, "..", jEnd, " (", jEnd - j + 1, " sub-layers)",
+            " into one liquid layer of",
+            " outer r = ", ScientificForm[N[rOuter], 4], " m,",
+            " mean rho = ", NumberForm[N[meanRho], 5], " kg/m^3"]];
+        AppendTo[rOut, rOuter];
+        AppendTo[rhoOut, meanRho];
+        AppendTo[muOut, muk[[j]]];
+        AppendTo[etaOut, etak[[j]]];
+        j = jEnd + 1,
+        AppendTo[rOut, rk[[j]]];
+        AppendTo[rhoOut, rhok[[j]]];
+        AppendTo[muOut, muk[[j]]];
+        AppendTo[etaOut, etak[[j]]];
+        j++]];
+
+    {rOut, rhoOut, muOut, etaOut}
+  ];
 
 (* ---- Internal helpers ------------------------------------------------ *)
 
