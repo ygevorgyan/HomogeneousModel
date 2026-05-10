@@ -107,7 +107,11 @@ The pipeline proceeds in three stages:
   liquid).  Liquid layers are handled via $\hat\mu \approx 10^{-20}$
   regularization.  The secular determinant $D(s)$
   (SVC\,2016, Eq.~1.199) is computed from the $3\times3$ projected
-  matrix.  Provides \texttt{nLayerK2Num} (numerical $k_2(s)$),
+  matrix.  Also provides \texttt{mergeAdjacentLiquidLayers}, which
+  collapses runs of consecutive liquid sub-layers into a single
+  equivalent liquid region with the volume-weighted mean density
+  (preserves total mass exactly).  Other exports:
+  \texttt{nLayerK2Num} (numerical $k_2(s)$),
   \texttt{nLayerDetNum} ($D(s)$), \texttt{nLayerResidues}
   (residues via limit formula), and perturbation utilities. \\[4pt]
 \texttt{HomogeneousRheology.wl} &
@@ -184,7 +188,12 @@ plots.
 
 Edit \texttt{ModelInput.wl}.  All arrays must have the same length.
 Set $\mu < 1$\,Pa for liquid layers.  Use exact rationals for maximum
-precision.
+precision.  If the input contains a run of consecutive liquid
+layers (a stratified liquid core or mantle supplied as several
+sub-layers), the pipeline collapses them automatically into a
+single equivalent liquid layer with the volume-weighted mean
+density (Section~\ref{sec:liquid-merge}); inputs with at most one
+liquid run are unaffected.
 
 %======================================================================
 \section{Configuration: \texttt{ModelInput.wl}}
@@ -346,6 +355,42 @@ The driver prints seven output sections:
 \section{Mathematical Pipeline}
 \label{sec:math}
 
+\subsection{Adjacent-liquid pre-processing}
+\label{sec:liquid-merge}
+
+Before any propagator evaluation, the pipeline scans the input for
+runs of consecutive liquid layers ($\mu_k < 1$\,Pa). Each such run
+$\{a, a+1, \ldots, b\}$ is collapsed into a single equivalent liquid
+layer with outer radius $r_b$, inner radius $r_{a-1}$ (or zero if
+$a=1$), and density
+\begin{equation}
+  \rho_{\mathrm{eff}} \;=\;
+  \frac{\sum_{k=a}^{b} \rho_k\,(r_k^3 - r_{k-1}^3)}
+       {r_b^3 - r_{a-1}^3}\,,
+\end{equation}
+which is the volume-weighted mean and preserves the total mass of
+the merged region exactly. Inputs with at most one liquid run are
+unaffected.
+
+The merge is performed by \texttt{mergeAdjacentLiquidLayers},
+exported from \texttt{NLayerJacobian.wl}, and is on by default in
+\texttt{computeHomogeneous} through the option
+\texttt{"MergeAdjacentLiquids"}.
+
+The motivation is twofold. First, contiguous liquid layers are one
+fluid region in the boundary-value problem; the propagator does not
+gain physical content from internal interfaces inside such a region.
+Second, supplying the liquid as several stratified sub-layers can
+introduce numerical artefacts at those internal interfaces. The
+pre-processing removes both issues in one step. A demonstration is
+provided by the new test case
+\texttt{ModelInputStratLiquid.wl}
+(see Section~\ref{sec:testcases}), together with the driver
+\texttt{RunStratLiquidDemo.wl}: it compares supplying the liquid
+core as three sub-layers against supplying the equivalent
+single-layer body, and the two reductions agree to all printed
+digits.
+
 \subsection{From multilayer to $k_2(s)$}
 
 Each solid layer has Maxwell rheology with complex shear modulus
@@ -454,6 +499,15 @@ patterns.
     mantle, asthenosphere, lithosphere).  One liquid layer, contrasting
     solid viscosities.  Tidal period 1.7691\,days.  Based on Segatz
     et al.\ (1988), Bierson \& Nimmo (2016).
+  \item[\texttt{ModelInputStratLiquid.wl}] --- 5~layers (three
+    stratified liquid Fe sub-layers of densities 12000, 10000, and
+    8000\,kg\,m$^{-3}$, plus two solid silicate mantle layers).
+    Demonstrates the adjacent-liquid auto-merge: the pipeline
+    collapses the three sub-layers into a single equivalent liquid
+    layer of mean density $10008.77$\,kg\,m$^{-3}$ before building
+    the propagator. The companion driver \texttt{RunStratLiquidDemo.wl}
+    compares the stratified-as-supplied result with the pre-merged
+    equivalent body; the two reductions agree to all printed digits.
 \end{description}
 
 \subsection{Running a test case}

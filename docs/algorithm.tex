@@ -125,8 +125,23 @@ threshold $f_{\mathrm{thresh}}$.
 \subsection*{Stage 1: Forward problem}
 
 \begin{enumerate}[leftmargin=2em]
-  \item For each layer $k$, form the Maxwell complex shear modulus
-    via the Correspondence Principle:
+  \item Pre-process the input: any run of consecutive liquid layers
+    ($\mu_k < 1$\,Pa) is collapsed into a single equivalent liquid
+    layer with the outer radius of the outermost member, the inner
+    radius of the underlying solid, and the volume-weighted mean
+    density
+    \[
+      \rho_{\mathrm{eff}} \;=\;
+      \frac{\sum_{k=a}^{b} \rho_k\,(r_k^3 - r_{k-1}^3)}
+           {r_b^3 - r_{a-1}^3},
+    \]
+    which preserves the total mass of the merged region exactly. This
+    step is a no-op for inputs with at most one liquid run; it removes
+    spurious internal interfaces when a stratified liquid core or
+    mantle is supplied as several sub-layers.
+
+  \item For each remaining layer $k$, form the Maxwell complex shear
+    modulus via the Correspondence Principle:
     $\hat\mu_k(s) = \mu_k \nu_k s / (\mu_k + \nu_k s)$.
     For liquid layers ($\mu_k < 1$\,Pa), regularize
     $\hat\mu_k \approx 10^{-20}$\,Pa.
