@@ -31,6 +31,24 @@ All layer arrays (rk, rhok, muk, etak) must have the same length
 and are ordered from center (layer 1) to surface (layer N).
 Liquid layers are indicated by setting mu < 1 Pa.
 
+If the input contains a run of consecutive liquid layers (a
+stratified liquid core or mantle supplied as several sub-layers),
+the pipeline collapses them automatically into a single equivalent
+liquid layer with the outer radius of the outermost member, the
+inner radius of the underlying solid, and the volume-weighted mean
+density
+
+    rho_eff = sum_k rho_k (r_k^3 - r_{k-1}^3) / (r_outer^3 - r_inner^3),
+
+which preserves the total mass of the merged region exactly. This
+preprocessing matters when an interior model is supplied with the
+liquid core or mantle stratified into several sub-layers; the
+collapsed layout removes spurious internal interfaces and keeps the
+propagator stack minimal. The merge is on by default and can be
+disabled by passing "MergeAdjacentLiquids" -> False to
+computeHomogeneous. Inputs that already contain at most one liquid
+run are unaffected.
+
 An optional "layerNames" key can provide custom labels for the
 visualization (e.g., {"Inner core", "Outer core", ...}).  If
 omitted, layers are labelled generically as "Layer i (solid/liquid)".
@@ -39,6 +57,13 @@ Pre-configured test cases for the Moon, Europa, Io, and Enceladus
 are in test_cases/.  To use one, copy it over ModelInput.wl:
 
     cp test_cases/ModelInputEuropa.wl ModelInput.wl
+
+A demonstration of the stratified-liquid merge is in
+test_cases/ModelInputStratLiquid.wl together with the driver
+RunStratLiquidDemo.wl, which compares the result of supplying the
+liquid core as three sub-layers with the result of supplying the
+already-merged equivalent body. The two reductions agree to all
+printed digits.
 
 
 Running
